@@ -25,7 +25,26 @@ import torch.nn as nn
 class MLP(nn.Module):
     def __init__(self, in_dim: int, hidden: list[int], dropout: float = 0.3, prior: float = 0.5):
         super().__init__()
-        raise NotImplementedError("TASK 2: build the layers")
+
+        layers: list[nn.Module] = []
+        prev = in_dim
+        for width in hidden:
+            layers.append(nn.Linear(prev, width))
+            layers.append(nn.ReLU())
+            layers.append(nn.Dropout(dropout))
+            prev = width
+
+        self.trunk = nn.Sequential(*layers)
+
+        # Output head: one logit mapped to [0, 1] via sigmoid.
+        # Initialise the bias so sigmoid(bias) ≈ prior, which means the
+        # network's first predictions are already near the training mean
+        # rather than 0.5, shrinking the initial loss and stabilising early
+        # gradient steps.
+        self.head = nn.Linear(prev, 1)
+        nn.init.zeros_(self.head.weight)
+        prior_clamped = float(torch.tensor(prior).clamp(1e-6, 1 - 1e-6))
+        self.head.bias.data.fill_(torch.log(torch.tensor(prior_clamped / (1 - prior_clamped))).item())
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError("TASK 2: one number in [0, 1] per row, shape (batch,)")
+        return torch.sigmoid(self.head(self.trunk(x))).squeeze(1)  # (batch,)
